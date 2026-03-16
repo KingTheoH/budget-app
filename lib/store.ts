@@ -1,6 +1,20 @@
 // Types
 export type TransactionType = 'income' | 'expense'
 
+export interface Goal {
+  id: string
+  name: string
+  targetAmount: number
+  savedAmount: number
+  deadline?: string
+  color: string
+}
+
+export interface PortfolioSnapshot {
+  date: string
+  value: number
+}
+
 export interface Transaction {
   id: string
   date: string
@@ -131,5 +145,62 @@ export const getCurrentMonthTransactions = (): Transaction[] => {
   })
 }
 
-export const formatCurrency = (amount: number): string =>
-  new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount)
+// Currency
+export const CURRENCIES = [
+  { code: 'GBP', symbol: '£', label: 'GBP £' },
+  { code: 'USD', symbol: '$', label: 'USD $' },
+  { code: 'EUR', symbol: '€', label: 'EUR €' },
+  { code: 'JPY', symbol: '¥', label: 'JPY ¥' },
+  { code: 'CAD', symbol: '$', label: 'CAD $' },
+  { code: 'AUD', symbol: '$', label: 'AUD $' },
+]
+export const getCurrency = (): string => {
+  if (typeof window === 'undefined') return 'GBP'
+  return localStorage.getItem('currency') || 'GBP'
+}
+export const saveCurrency = (code: string) => {
+  if (typeof window !== 'undefined') localStorage.setItem('currency', code)
+}
+
+export const formatCurrency = (amount: number, currencyCode?: string): string => {
+  const code = currencyCode || getCurrency()
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: code }).format(amount)
+}
+
+// Goals
+export const getGoals = (): Goal[] => get('goals', [])
+export const saveGoals = (g: Goal[]) => set('goals', g)
+
+export const addGoal = (g: Omit<Goal, 'id'>): Goal => {
+  const goal: Goal = { ...g, id: crypto.randomUUID() }
+  saveGoals([...getGoals(), goal])
+  return goal
+}
+
+export const updateGoal = (id: string, updates: Partial<Goal>) => {
+  saveGoals(getGoals().map(g => g.id === id ? { ...g, ...updates } : g))
+}
+
+export const deleteGoal = (id: string) => {
+  saveGoals(getGoals().filter(g => g.id !== id))
+}
+
+// Portfolio Snapshots
+export const getPortfolioSnapshots = (): PortfolioSnapshot[] => get('portfolioSnapshots', [])
+export const savePortfolioSnapshots = (s: PortfolioSnapshot[]) => set('portfolioSnapshots', s)
+
+export const addPortfolioSnapshot = (value: number) => {
+  const snapshots = getPortfolioSnapshots()
+  const today = new Date().toISOString().split('T')[0]
+  // Update today's snapshot or add new one
+  const existing = snapshots.findIndex(s => s.date === today)
+  if (existing >= 0) {
+    snapshots[existing].value = value
+  } else {
+    snapshots.push({ date: today, value })
+  }
+  // Keep last 90 days
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - 90)
+  savePortfolioSnapshots(snapshots.filter(s => new Date(s.date) >= cutoff))
+}
