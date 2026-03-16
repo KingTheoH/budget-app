@@ -1,65 +1,164 @@
-import Image from "next/image";
+'use client'
+import { useEffect, useState } from 'react'
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
+} from 'recharts'
+import {
+  getCurrentMonthTransactions, getTransactions, getBudgets, getInvestments,
+  formatCurrency, Transaction, Budget, Investment
+} from '@/lib/store'
 
-export default function Home() {
+const PIE_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#f43f5e', '#14b8a6', '#a855f7', '#f97316']
+
+function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+      <p className="text-gray-400 text-sm mb-1">{label}</p>
+      <p className={`text-2xl font-bold ${color ?? 'text-white'}`}>{value}</p>
+      {sub && <p className="text-gray-500 text-xs mt-1">{sub}</p>}
     </div>
-  );
+  )
+}
+
+export default function Dashboard() {
+  const [txs, setTxs] = useState<Transaction[]>([])
+  const [budgets, setBudgets] = useState<Budget[]>([])
+  const [investments, setInvestments] = useState<Investment[]>([])
+  const [allTxs, setAllTxs] = useState<Transaction[]>([])
+
+  useEffect(() => {
+    setTxs(getCurrentMonthTransactions())
+    setBudgets(getBudgets())
+    setInvestments(getInvestments())
+    setAllTxs(getTransactions())
+  }, [])
+
+  const income = txs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
+  const expenses = txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
+  const net = income - expenses
+
+  const byCategory: Record<string, number> = {}
+  txs.filter(t => t.type === 'expense').forEach(t => {
+    byCategory[t.category] = (byCategory[t.category] ?? 0) + t.amount
+  })
+  const pieData = Object.entries(byCategory).map(([name, value]) => ({ name, value }))
+
+  const now = new Date()
+  const last6: { month: string; income: number; expenses: number }[] = []
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const m = d.getMonth(); const y = d.getFullYear()
+    const monthTxs = allTxs.filter(t => {
+      const td = new Date(t.date)
+      return td.getMonth() === m && td.getFullYear() === y
+    })
+    last6.push({
+      month: d.toLocaleString('default', { month: 'short' }),
+      income: monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0),
+      expenses: monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0),
+    })
+  }
+
+  const portfolioValue = investments.reduce((s, i) => s + i.shares * i.currentPrice, 0)
+  const costBasis = investments.reduce((s, i) => s + i.shares * i.buyPrice, 0)
+  const portfolioGain = portfolioValue - costBasis
+
+  const recent = [...allTxs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5)
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold">Dashboard</h2>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="This Month Income" value={formatCurrency(income)} color="text-green-400" />
+        <StatCard label="This Month Expenses" value={formatCurrency(expenses)} color="text-red-400" />
+        <StatCard label="Net Balance" value={formatCurrency(net)} color={net >= 0 ? 'text-green-400' : 'text-red-400'} />
+        <StatCard label="Portfolio Value" value={formatCurrency(portfolioValue)}
+          sub={`${portfolioGain >= 0 ? '+' : ''}${formatCurrency(portfolioGain)} gain`}
+          color={portfolioGain >= 0 ? 'text-green-400' : 'text-red-400'} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+          <h3 className="text-sm font-semibold text-gray-400 mb-4">Income vs Expenses (6 months)</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={last6} barSize={16}>
+              <XAxis dataKey="month" stroke="#6b7280" tick={{ fontSize: 12 }} />
+              <YAxis stroke="#6b7280" tick={{ fontSize: 12 }} />
+              <Tooltip contentStyle={{ background: '#1f2937', border: 'none', borderRadius: 8 }} />
+              <Bar dataKey="income" fill="#10b981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="expenses" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+          <h3 className="text-sm font-semibold text-gray-400 mb-4">Spending by Category</h3>
+          {pieData.length === 0 ? (
+            <p className="text-gray-500 text-sm mt-10 text-center">No expenses this month</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" paddingAngle={3}>
+                  {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={{ background: '#1f2937', border: 'none', borderRadius: 8 }}
+                  formatter={(v: number) => formatCurrency(v)} />
+                <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {budgets.length > 0 && (
+        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+          <h3 className="text-sm font-semibold text-gray-400 mb-4">Budget Progress</h3>
+          <div className="space-y-3">
+            {budgets.map(b => {
+              const spent = byCategory[b.category] ?? 0
+              const pct = Math.min((spent / b.monthlyLimit) * 100, 100)
+              return (
+                <div key={b.category}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>{b.category}</span>
+                    <span className={spent > b.monthlyLimit ? 'text-red-400' : 'text-gray-400'}>
+                      {formatCurrency(spent)} / {formatCurrency(b.monthlyLimit)}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-red-500' : pct >= 75 ? 'bg-yellow-500' : 'bg-indigo-500'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+        <h3 className="text-sm font-semibold text-gray-400 mb-4">Recent Transactions</h3>
+        {recent.length === 0 ? (
+          <p className="text-gray-500 text-sm">No transactions yet. Add one in Transactions.</p>
+        ) : (
+          <div className="space-y-2">
+            {recent.map(t => (
+              <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+                <div>
+                  <p className="text-sm font-medium">{t.note || t.category}</p>
+                  <p className="text-xs text-gray-500">{t.category} · {new Date(t.date).toLocaleDateString()}</p>
+                </div>
+                <span className={`text-sm font-semibold ${t.type === 'income' ? 'text-green-400' : 'text-red-400'}`}>
+                  {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
